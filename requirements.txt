@@ -1,8 +1,9 @@
 streamlit
 google-generativeai
 python-dotenv
-langchain
-PyPDF2
-chromadb
-faiss-cpu
+langchain>=0.1.13
+langchain-community
 langchain_google_genai
+faiss-cpu
+chromadb
+PyPDF2
