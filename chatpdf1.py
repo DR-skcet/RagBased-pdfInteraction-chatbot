@@ -55,24 +55,48 @@ def user_input(user_question):
     print(response)
     st.write("Reply: ", response["output_text"])
 
-def main():
-    st.set_page_config(page_title="Chat PDF")
-    st.header("Interactive RAG-based LLM for Multi-PDF Document Analysis", divider='rainbow')
+import streamlit as st
 
-    user_question = st.text_input("Ask a Question from the PDF Files")
+def main():
+    st.set_page_config(page_title="📄 ChatPDF - RAG Assistant", page_icon="🧠", layout="wide")
+
+    # --- Sidebar ---
+    with st.sidebar:
+        st.title("📂 Upload & Process")
+        st.markdown("Upload one or more PDF documents. Click the button to process them for Q&A.")
+        
+        pdf_docs = st.file_uploader("📄 Upload PDF Files", type="pdf", accept_multiple_files=True)
+        
+        if st.button("🚀 Submit & Process"):
+            if pdf_docs:
+                with st.spinner("🔄 Extracting and indexing your documents..."):
+                    raw_text = get_pdf_text(pdf_docs)
+                    text_chunks = get_text_chunks(raw_text)
+                    get_vector_store(text_chunks)
+                    st.success("✅ All documents processed successfully!")
+            else:
+                st.warning("⚠️ Please upload at least one PDF file.")
+
+    # --- Header ---
+    st.markdown("""
+        <div style='text-align: center;'>
+            <h1 style='color: white;'>🧠 ChatPDF  AI Assistant</h1>
+            <p style='font-size: 18px; color: gray;'>
+                Ask intelligent questions across multiple PDFs using Retrieval-Augmented Generation (RAG)
+            </p>
+        </div>
+        <hr>
+    """, unsafe_allow_html=True)
+
+    # --- Main Content ---
+    st.markdown("### 💬 Ask a Question")
+    st.markdown("*Type any question related to your uploaded PDFs below*")
+
+    user_question = st.text_input("❓ Your Question")
 
     if user_question:
-        user_input(user_question)
-
-    with st.sidebar:
-        st.title("Menu:")
-        pdf_docs = st.file_uploader("Upload your PDF Files and Click on the Submit & Process Button", accept_multiple_files=True)
-        if st.button("Submit & Process"):
-            with st.spinner("Processing..."):
-                raw_text = get_pdf_text(pdf_docs)
-                text_chunks = get_text_chunks(raw_text)
-                get_vector_store(text_chunks)
-                st.success("Done")
+        with st.spinner("🤖 Generating answer..."):
+            user_input(user_question)
 
 if __name__ == "__main__":
     main()
