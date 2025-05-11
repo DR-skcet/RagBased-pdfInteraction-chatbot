@@ -4,15 +4,39 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 import google.generativeai as genai
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
 from dotenv import load_dotenv
 
+st.set_page_config(page_title="📄 ChatPDF - RAG Assistant", page_icon="🧠", layout="wide")
+
 load_dotenv()
 os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
+USERS = {
+    "admin": {"password": "admin123", "role": "admin"},
+    "user1": {"password": "user123", "role": "user"},
+    "user2": {"password": "user456", "role": "user"},
+}
+
+def login():
+    st.sidebar.header("🔐 Login")
+    username = st.sidebar.text_input("Username")
+    password = st.sidebar.text_input("Password", type="password")
+    login_btn = st.sidebar.button("Login")
+
+    if login_btn:
+        user = USERS.get(username)
+        if user and user["password"] == password:
+            st.session_state['logged_in'] = True
+            st.session_state['username'] = username
+            st.session_state['role'] = user["role"]
+            st.success(f"Welcome, {username}!")
+        else:
+            st.error("Invalid credentials")
 
 def get_pdf_text(pdf_docs):
     text = ""
@@ -27,10 +51,11 @@ def get_text_chunks(text):
     chunks = text_splitter.split_text(text)
     return chunks
 
-def get_vector_store(text_chunks):
+def get_vector_store(text_chunks, username):
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
-    vector_store.save_local("faiss_index")
+    os.makedirs(f"faiss_indexes/{username}", exist_ok=True)
+    vector_store.save_local(f"faiss_indexes/{username}/index")
 
 def get_conversational_chain():
     prompt_template = """
@@ -46,38 +71,59 @@ def get_conversational_chain():
     chain = load_qa_chain(model, chain_type="stuff", prompt=prompt)
     return chain
 
-def user_input(user_question):
+def user_input(user_question, username, role):
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    new_db = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
-    docs = new_db.similarity_search(user_question)
-    chain = get_conversational_chain()
-    response = chain({"input_documents": docs, "question": user_question}, return_only_outputs=True)
-    print(response)
-    st.write("Reply: ", response["output_text"])
+    docs = []
 
-import streamlit as st
+    if role == "admin":
+        for user_folder in os.listdir("faiss_indexes"):
+            db_path = f"faiss_indexes/{user_folder}/index"
+            if os.path.exists(db_path):
+                db = FAISS.load_local(db_path, embeddings, allow_dangerous_deserialization=True)
+                docs.extend(db.similarity_search(user_question))
+    else:
+        db_path = f"faiss_indexes/{username}/index"
+        if os.path.exists(db_path):
+            db = FAISS.load_local(db_path, embeddings, allow_dangerous_deserialization=True)
+            docs = db.similarity_search(user_question)
+        else:
+            st.warning("⚠️ No documents uploaded yet.")
+
+    if docs:
+        chain = get_conversational_chain()
+        response = chain({"input_documents": docs, "question": user_question}, return_only_outputs=True)
+        st.write("Reply: ", response["output_text"])
+    else:
+        st.warning("❌ No relevant documents found for this question.")
 
 def main():
-    st.set_page_config(page_title="📄 ChatPDF - RAG Assistant", page_icon="🧠", layout="wide")
+    # Check if logged_in exists, if not call the login function.
+    if "logged_in" not in st.session_state or not st.session_state['logged_in']:
+        login()
+        return
 
-    # --- Sidebar ---
-    with st.sidebar:
-        st.title("📂 Upload & Process")
-        st.markdown("Upload one or more PDF documents. Click the button to process them for Q&A.")
-        
-        pdf_docs = st.file_uploader("📄 Upload PDF Files", type="pdf", accept_multiple_files=True)
-        
-        if st.button("🚀 Submit & Process"):
-            if pdf_docs:
-                with st.spinner("🔄 Extracting and indexing your documents..."):
-                    raw_text = get_pdf_text(pdf_docs)
-                    text_chunks = get_text_chunks(raw_text)
-                    get_vector_store(text_chunks)
-                    st.success("✅ All documents processed successfully!")
-            else:
-                st.warning("⚠️ Please upload at least one PDF file.")
+    username = st.session_state['username']
+    role = st.session_state['role']
 
-    # --- Header ---
+    # Once logged in, skip login and show the chat interface
+    st.sidebar.success(f"✅ Logged in as: {username} ({role})")
+    pdf_docs = st.file_uploader("📄 Upload PDF Files", type="pdf", accept_multiple_files=True)
+
+    if st.button("🚀 Submit & Process"):
+        if pdf_docs:
+            with st.spinner("🔄 Extracting and indexing your documents..."):
+                raw_text = get_pdf_text(pdf_docs)
+                text_chunks = get_text_chunks(raw_text)
+                get_vector_store(text_chunks, username)
+                st.success("✅ Documents processed successfully!")
+        else:
+            st.warning("⚠️ Upload at least one PDF.")
+
+    if st.button("🔒 Logout"):
+        st.session_state.clear()
+        st.rerun()
+
+    # Main Content
     st.markdown("""
         <div style='text-align: center;'>
             <h1 style='color: #2E8B57;'>🧠 ChatPDF  AI Assistant</h1>
@@ -88,7 +134,6 @@ def main():
         <hr>
     """, unsafe_allow_html=True)
 
-    # --- Main Content ---
     st.markdown("### 💬 Ask a Question")
     st.markdown("*Type any question related to your uploaded PDFs below*")
 
@@ -96,7 +141,7 @@ def main():
 
     if user_question:
         with st.spinner("🤖 Generating answer..."):
-            user_input(user_question)
+            user_input(user_question, username, role)
 
 if __name__ == "__main__":
     main()
