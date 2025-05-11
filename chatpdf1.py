@@ -80,7 +80,7 @@ def main():
     # --- Header ---
     st.markdown("""
         <div style='text-align: center;'>
-            <h1 style='color: white;'>🧠 ChatPDF  AI Assistant</h1>
+            <h1 style='color: #2E8B57;'>🧠 ChatPDF  AI Assistant</h1>
             <p style='font-size: 18px; color: gray;'>
                 Ask intelligent questions across multiple PDFs using Retrieval-Augmented Generation (RAG)
             </p>
